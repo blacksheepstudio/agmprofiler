@@ -46,6 +46,15 @@ class APICallTester(object):
             test_result_list.append(call_test_response)
         return test_result_list
 
+    def time_head_calls(self, endpoints, iterations=10):
+        test_result_list = list()
+        for endpoint in endpoints:
+            call_test_response = CallTestResponse(self, endpoint, iterations)
+            call_test_response.run_head()
+            logging.info(call_test_response)
+            test_result_list.append(call_test_response)
+        return test_result_list
+
     def request_with_status(self, method, endpoint, *args, **kwargs):
         """
         Issue request and get Json response.
@@ -114,11 +123,26 @@ class CallTestResponse(object):
         _, r = self._time_call(self.endpoint)
         self.count = r['count']
 
+    def run_head(self):
+        self.avg_time, self.min_time, self.max_time = self._test_api_head_call(self.endpoint, self.iterations)
+        # self._time_head_call(self.endpoint)
+        self.count = 1
+
     def _test_api_call(self, endpoint, iterations=10, *args, **kwargs):
         """ Repeat call N times, and get the avg, min, and max time that the call takes for response """
         times = []
         for i in range(2, iterations):
             elapased_time, __ = self._time_call(endpoint, *args, **kwargs)
+            times.append(elapased_time)
+        avg_time = float(sum(times)) / max(len(times), 1)
+        min_time = min(times)
+        max_time = max(times)
+        return avg_time, min_time, max_time
+
+    def _test_api_head_call(self, endpoint, iterations=10, *args, **kwargs):
+        times = []
+        for i in range(2, iterations):
+            elapased_time, __ = self._time_head_call(endpoint, *args, **kwargs)
             times.append(elapased_time)
         avg_time = float(sum(times)) / max(len(times), 1)
         min_time = min(times)
@@ -143,6 +167,12 @@ class CallTestResponse(object):
         """ Return elapsed time, and response """
         start_time = time.time()
         r = self.agm_lib.request_with_status('GET', endpoint, *args, **kwargs)
+        elapsed_time = time.time() - start_time
+        return elapsed_time, r
+
+    def _time_head_call(self, endpoint, *args, **kwargs):
+        start_time = time.time()
+        r = self.agm_lib.ah.head(endpoint)
         elapsed_time = time.time() - start_time
         return elapsed_time, r
 
@@ -192,21 +222,15 @@ def export_csv(header, row):
 
 
 if __name__ == '__main__':
-    a = APICallTester('172.17.139.215', 'admin', 'password')
-    a.agm_login()
-    # result_obj_li = a.time_calls(ENDPOINTS)
-    result_obj_li = a.time_detail_calls(ENDPOINTS_DETAIL)
-    # results_li = [list(obj) for obj in result_obj_li]
-    # import pprint
-    # pprint.pprint(results_li)
-    import pprint
-    print(result_obj_li)
-    header, single_row = single_row_format(result_obj_li)
-    export_csv(header, single_row)
-
-
     # a = APICallTester('172.17.139.215', 'admin', 'password')
     # a.agm_login()
-    # call_test_response = CallTestResponse(a, '/user', 5)
-    # call_test_response.run()
-    # print(call_test_response.date)
+    # result_obj_li = a.time_detail_calls(ENDPOINTS_DETAIL)
+    # print(result_obj_li)
+    # header, single_row = single_row_format(result_obj_li)
+    # export_csv(header, single_row)
+
+    a = APICallTester('172.17.139.215', 'admin', 'password')
+    a.agm_login()
+    result_obj_li = a.time_head_calls(ENDPOINTS_DETAIL)
+    print(result_obj_li)
+    print(result_obj_li[0]._data)
