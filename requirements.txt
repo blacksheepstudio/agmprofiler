@@ -1,0 +1,7 @@
+paramiko>=1.16.0
+pycrypto>=2.6.1
+requests>=2.9.1
+actagm
+gspread
+pyaml
+oauth2client
