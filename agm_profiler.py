@@ -1,17 +1,20 @@
 from actagm.agm_helper import AgmHelper
 import time
-import os
+import pprint
 import logging
+import os
+import json
+
 
 logging.basicConfig(level=logging.INFO)
 
+#
+# ENDPOINTS = ('/cluster', '/consistencygroup', '/logicalgroup', '/jobstatus', '/application',
+#              '/slt', '/slp', '/host', '/user', '/role', '/org', '/diskpool', '/backup')
 
-ENDPOINTS = ('/cluster', '/consistencygroup', '/logicalgroup', '/jobstatus', '/application',
-             '/slt', '/slp', '/host', '/user', '/role', '/org', '/diskpool', '/backup')
 
-ENDPOINTS_DETAIL = ('/cluster', '/consistencygroup', '/logicalgroup', '/jobstatus', '/application',
-                    '/slt', '/slp', '/host', '/user', '/role', '/org', '/diskpool', '/backup')
-
+ENDPOINTS = ('/cluster', '/consistencygroup', '/logicalgroup', '/jobstatus')
+JSON_FILENAME = 'agm_data.json'
 
 # /cluster may have 'stale' field in response, where timeout occured and we were unable to get all the data
 
@@ -32,7 +35,7 @@ class APICallTester(object):
         test_result_list = list()
         for endpoint in endpoints:
             call_test_response = CallTestResponse(self, endpoint, iterations)
-            call_test_response.run()
+            call_test_response.run_list()
             logging.info(call_test_response)
             test_result_list.append(call_test_response)
         return test_result_list
@@ -76,6 +79,67 @@ class APICallTester(object):
         self.ah.logout()
 
 
+class AGMApiTestExecution(object):
+    """
+    This object represents an execution of testing all the endpoints using get/list, get/detailed, and head calls
+
+    It's data dictionary is structured as:
+    {'version': '<agm_version>', 'time': '<execution_datetime>', 'ipaddress': '<ip of agm>', 'tests':
+        {
+            'list': [<CallTestResponse>, <CallTestResponse>, <CallTestResponse>, ...],
+            'detail': [<CallTestResponse>, ...],
+            'head': [<CallTestResponse>, ...],
+        }
+    }
+    """
+    def __init__(self, ipaddress, username, password, iterations=10):
+        self.version = ''
+        self.time = ''
+        self.tests = {'list': '', 'detail': '', 'head': ''}
+        self.ipaddress = ipaddress
+        self.iterations = iterations
+        self.api_tester = APICallTester(ipaddress, username, password)
+
+    def run(self):
+        self.api_tester.agm_login()
+        self.version = self.get_version()
+        self.time = self.get_time()
+        # run list, detail and head calls for all endpoints
+        self.tests['list'] = [o._data for o in self.api_tester.time_calls(ENDPOINTS, self.iterations)]
+        self.tests['detail'] = [o._data for o in self.api_tester.time_detail_calls(ENDPOINTS, self.iterations)]
+        self.tests['head'] = [o._data for o in self.api_tester.time_head_calls(ENDPOINTS, self.iterations)]
+        self._append_to_json()
+
+    def _append_to_json(self):
+        self._create_json_if_not_exist()
+        with open(JSON_FILENAME, 'r') as f:
+            json_data = json.load(f)
+        json_data.append(self.data)
+        with open(JSON_FILENAME, 'w') as f:
+            json.dump(json_data, f)
+
+    def _create_json_if_not_exist(self):
+        if not os.path.exists(JSON_FILENAME):
+            with open(JSON_FILENAME, 'w') as f:
+                json.dump(list(), f)
+
+    def print_json_data(self):
+        with open(JSON_FILENAME) as f:
+            pprint.pprint(json.load(f))
+
+    def get_version(self):
+        return '8.1.0.1482'
+        # return self.api_tester.request_with_status('GET', '/configuration')
+
+    def get_time(self):
+        return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
+
+    @property
+    def data(self):
+        return {'time': self.time, 'version': self.version, 'ipaddress': self.ipaddress, 'iterations': self.iterations,
+                'tests': self.tests}
+
+
 class CallTestResponse(object):
     """
     This object represents the result of an API call test against a certain endpoint.
@@ -87,11 +151,10 @@ class CallTestResponse(object):
 
     self.endpoint == '/application'
     self.iterations == 10
-    self.avg_time == 3.0
-    self.max_time == 3.4
-    self.min_time == 2.8
+    self.times = ['1.0', '1.1', '1.2', ...] # seconds
     self.count == 88
     self.source_ip
+    self.version = '7.1.0.132'
 
     """
     # Should be a named tuple, but keeping python 2.6 compatibility
@@ -109,45 +172,40 @@ class CallTestResponse(object):
 
         self.endpoint = endpoint
         self.iterations = iterations
-        self.avg_time = self.min_time = self.max_time = self.count = None
+        self.version = ''
+        self.times = list()
+        self.count = None
 
-    def run(self):
+    def run_list(self):
         """ Runs GET list api call of given number of iterations """
-        self.avg_time, self.min_time, self.max_time = self._test_api_call(self.endpoint, self.iterations)
+        self.times = self._test_api_call(self.endpoint, self.iterations)
         __, r = self._time_call(self.endpoint)
         self.count = r['count']
 
     def run_detail(self):
         """ Runs GET detail api call of given number of iterations """
-        self.avg_time, self.min_time, self.max_time = self._test_api_call_detailed(self.endpoint, self.iterations)
+        self.times = self._test_api_call_detailed(self.endpoint, self.iterations)
         _, r = self._time_call(self.endpoint)
         self.count = r['count']
 
     def run_head(self):
-        self.avg_time, self.min_time, self.max_time = self._test_api_head_call(self.endpoint, self.iterations)
-        # self._time_head_call(self.endpoint)
+        self.times = self._test_api_head_call(self.endpoint, self.iterations)
         self.count = 1
 
     def _test_api_call(self, endpoint, iterations=10, *args, **kwargs):
         """ Repeat call N times, and get the avg, min, and max time that the call takes for response """
-        times = []
-        for i in range(2, iterations):
+        times = list()
+        for i in range(0, iterations):
             elapased_time, __ = self._time_call(endpoint, *args, **kwargs)
             times.append(elapased_time)
-        avg_time = float(sum(times)) / max(len(times), 1)
-        min_time = min(times)
-        max_time = max(times)
-        return avg_time, min_time, max_time
+        return times
 
     def _test_api_head_call(self, endpoint, iterations=10, *args, **kwargs):
-        times = []
-        for i in range(2, iterations):
+        times = list()
+        for i in range(0, iterations):
             elapased_time, __ = self._time_head_call(endpoint, *args, **kwargs)
             times.append(elapased_time)
-        avg_time = float(sum(times)) / max(len(times), 1)
-        min_time = min(times)
-        max_time = max(times)
-        return avg_time, min_time, max_time
+        return times
 
     def _test_api_call_detailed(self, endpoint, iterations=10, *args, **kwargs):
         # Get id from first element of endpoint
@@ -159,9 +217,9 @@ class CallTestResponse(object):
             return None, None, None
         # Run detailed call against that id
         print(f'Issuing detail {iterations} calls: GET {call}')
-        avg_time, min_time, max_time = self._test_api_call(f'{call}', iterations, *args, **kwargs)
-        print(f'avg_time: {avg_time}, min_time: {min_time}, max_time: {max_time}')
-        return avg_time, min_time, max_time
+        times = self._test_api_call(f'{call}', iterations, *args, **kwargs)
+        print(times)
+        return times
 
     def _time_call(self, endpoint, *args, **kwargs):
         """ Return elapsed time, and response """
@@ -178,47 +236,45 @@ class CallTestResponse(object):
 
     @property
     def _data(self):
-        return {'date': self.date, 'source_ip': self.source_ip, 'endpoint': self.endpoint, 'count': self.count,
-                'avg_time': self.avg_time, 'min_time': self.min_time, 'max_time': self.max_time,
-                'iterations': self.iterations}
+        return {'endpoint': self.endpoint, 'count': self.count, 'times': self.times}
 
     def __str__(self):
-        return 'Endpoint: {0}\nResponse Size:{5}\nAvg_time: {1}\nMin_time: {2}\nMax_time: {3}\nIterations: {4}'.format(
-            self.endpoint, self.avg_time, self.min_time, self.max_time, self.iterations, self.count)
+        return f'Endpoint: {self.endpoint}\nResponse Size: {self.count}\n' \
+               f'Times: {self.times}\nIterations: {self.iterations}'
 
     def __iter__(self):
         for item in [self.date, self.source_ip, self.endpoint, self.count,
-                     self.avg_time, self.min_time, self.max_time, self.iterations]:
+                     self.times, self.iterations, self.version]:
             yield item
 
     def __getitem__(self, item):
         return self._data[item]
 
 
-def single_row_format(results_obj_li):
-    header = ['date', 'iterations']
-    single_row = list()
-    # time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(1347517370))
-    single_row += [results_obj_li[0].date]
-    single_row += [results_obj_li[0].iterations]
-    for endpoint in results_obj_li:
-        header += [f'{endpoint.endpoint} count']
-        single_row += [endpoint.count]
-        header += [f'{endpoint.endpoint} avg_time']
-        single_row += [endpoint.avg_time]
-        header += [f'{endpoint.endpoint} min_time']
-        single_row += [endpoint.min_time]
-        header += [f'{endpoint.endpoint} max_time']
-        single_row += [endpoint.max_time]
-    return header, single_row
-
-
-def export_csv(header, row):
-    with open('results_csv.csv', 'w') as f:
-        f.write(','.join([str(item) for item in header]))
-        f.write('\n')
-        f.write(','.join([str(item) for item in row]))
-        f.write('\n')
+# def single_row_format(results_obj_li):
+#     header = ['date', 'iterations']
+#     single_row = list()
+#     # time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(1347517370))
+#     single_row += [results_obj_li[0].date]
+#     single_row += [results_obj_li[0].iterations]
+#     for endpoint in results_obj_li:
+#         header += [f'{endpoint.endpoint} count']
+#         single_row += [endpoint.count]
+#         header += [f'{endpoint.endpoint} avg_time']
+#         single_row += [endpoint.avg_time]
+#         header += [f'{endpoint.endpoint} min_time']
+#         single_row += [endpoint.min_time]
+#         header += [f'{endpoint.endpoint} max_time']
+#         single_row += [endpoint.max_time]
+#     return header, single_row
+#
+#
+# def export_csv(header, row):
+#     with open('results_csv.csv', 'w') as f:
+#         f.write(','.join([str(item) for item in header]))
+#         f.write('\n')
+#         f.write(','.join([str(item) for item in row]))
+#         f.write('\n')
 
 
 if __name__ == '__main__':
@@ -229,8 +285,13 @@ if __name__ == '__main__':
     # header, single_row = single_row_format(result_obj_li)
     # export_csv(header, single_row)
 
-    a = APICallTester('172.17.139.215', 'admin', 'password')
-    a.agm_login()
-    result_obj_li = a.time_head_calls(ENDPOINTS_DETAIL)
-    print(result_obj_li)
-    print(result_obj_li[0]._data)
+    a = AGMApiTestExecution('172.17.139.215', 'admin', 'password')
+    # a.run()
+    a.api_tester.agm_login()
+    print(a.get_version())
+    # pprint.pprint(a.data)
+
+
+    #result_obj_li = a.time_head_calls(ENDPOINTS_DETAIL)
+    #print(result_obj_li)
+    #print(result_obj_li[0]._data)
