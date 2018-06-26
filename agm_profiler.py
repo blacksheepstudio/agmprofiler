@@ -8,12 +8,12 @@ import json
 
 logging.basicConfig(level=logging.INFO)
 
-#
-# ENDPOINTS = ('/cluster', '/consistencygroup', '/logicalgroup', '/jobstatus', '/application',
-#              '/slt', '/slp', '/host', '/user', '/role', '/org', '/diskpool', '/backup')
+
+ENDPOINTS = ('/cluster', '/consistencygroup', '/logicalgroup', '/jobstatus', '/application',
+             '/slt', '/slp', '/host', '/user', '/role', '/org', '/diskpool', '/backup')
 
 
-ENDPOINTS = ('/cluster', '/consistencygroup', '/logicalgroup', '/jobstatus')
+# ENDPOINTS = ('/cluster', '/consistencygroup', '/logicalgroup', '/jobstatus')
 JSON_FILENAME = 'agm_data.json'
 
 # /cluster may have 'stale' field in response, where timeout occured and we were unable to get all the data
@@ -251,47 +251,6 @@ class CallTestResponse(object):
         return self._data[item]
 
 
-# def single_row_format(results_obj_li):
-#     header = ['date', 'iterations']
-#     single_row = list()
-#     # time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(1347517370))
-#     single_row += [results_obj_li[0].date]
-#     single_row += [results_obj_li[0].iterations]
-#     for endpoint in results_obj_li:
-#         header += [f'{endpoint.endpoint} count']
-#         single_row += [endpoint.count]
-#         header += [f'{endpoint.endpoint} avg_time']
-#         single_row += [endpoint.avg_time]
-#         header += [f'{endpoint.endpoint} min_time']
-#         single_row += [endpoint.min_time]
-#         header += [f'{endpoint.endpoint} max_time']
-#         single_row += [endpoint.max_time]
-#     return header, single_row
-#
-#
-# def export_csv(header, row):
-#     with open('results_csv.csv', 'w') as f:
-#         f.write(','.join([str(item) for item in header]))
-#         f.write('\n')
-#         f.write(','.join([str(item) for item in row]))
-#         f.write('\n')
-
-
 if __name__ == '__main__':
-    # a = APICallTester('172.17.139.215', 'admin', 'password')
-    # a.agm_login()
-    # result_obj_li = a.time_detail_calls(ENDPOINTS_DETAIL)
-    # print(result_obj_li)
-    # header, single_row = single_row_format(result_obj_li)
-    # export_csv(header, single_row)
-
-    a = AGMApiTestExecution('172.17.139.215', 'admin', 'password')
-    # a.run()
-    a.api_tester.agm_login()
-    print(a.get_version())
-    # pprint.pprint(a.data)
-
-
-    #result_obj_li = a.time_head_calls(ENDPOINTS_DETAIL)
-    #print(result_obj_li)
-    #print(result_obj_li[0]._data)
+    a = AGMApiTestExecution('172.27.6.99', 'admin', 'password')
+    a.run()
