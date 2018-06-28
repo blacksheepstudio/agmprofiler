@@ -128,8 +128,8 @@ class AGMApiTestExecution(object):
             pprint.pprint(json.load(f))
 
     def get_version(self):
-        return '8.1.0.1482'
-        # return self.api_tester.request_with_status('GET', '/configuration')
+        r = self.api_tester.request_with_status('GET', '/config/version')
+        return r['summary']
 
     def get_time(self):
         return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))
